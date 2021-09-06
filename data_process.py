@@ -5,7 +5,7 @@ from scipy import spatial
 import pickle
 
 # Please change this to your location
-data_root = '/data/xincoder/ApolloScape/'
+data_root = '/home/ailab/GRIP/dataset/ApolloScape/'
 
 
 history_frames = 6 # 3 second * 2 frame/second
@@ -182,8 +182,8 @@ def generate_data(pra_file_path_list, pra_is_train=True):
 
 
 if __name__ == '__main__':
-	train_file_path_list = sorted(glob.glob(os.path.join(data_root, 'prediction_train/*.txt')))
-	test_file_path_list = sorted(glob.glob(os.path.join(data_root, 'prediction_test/*.txt')))
+	train_file_path_list = sorted(glob.glob(os.path.join(data_root, 'train/*.txt')))
+	test_file_path_list = sorted(glob.glob(os.path.join(data_root, 'test/*.txt')))
 
 	print('Generating Training Data.')
 	generate_data(train_file_path_list, pra_is_train=True)

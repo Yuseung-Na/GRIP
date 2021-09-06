@@ -1,1 +1,7 @@
 /dataset/
+/__pycache__/
+/layers/__pycache__/
+
+*.pkl
+*.pyc
+*.pt

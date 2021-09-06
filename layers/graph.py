@@ -1,4 +1,5 @@
 import numpy as np
+import torch
 
 class Graph():
 	""" The Graph Representation
@@ -16,10 +17,15 @@ class Graph():
 		self.num_node = num_node 
 
 	def get_adjacency(self, A):
+		A = A.detach().cpu().numpy()
+		# print("A:", np.shape(A))  
 		# compute hop steps
 		self.hop_dis = np.zeros((self.num_node, self.num_node)) + np.inf
+		# print("hop_dis:",np.shape(self.hop_dis))
 		transfer_mat = [np.linalg.matrix_power(A, d) for d in range(self.max_hop + 1)]
+		# print("transfer_mat:",np.shape(transfer_mat))
 		arrive_mat = (np.stack(transfer_mat) > 0)
+		# print("arrive_mat:",np.shape(arrive_mat))
 		for d in range(self.max_hop, -1, -1):
 			self.hop_dis[arrive_mat[d]] = d
 
@@ -28,9 +34,15 @@ class Graph():
 		adjacency = np.zeros((self.num_node, self.num_node))
 		for hop in valid_hop:
 			adjacency[self.hop_dis == hop] = 1
+
+		adjacency = torch.from_numpy(adjacency)
+		adjacency = adjacency.float().to('cuda:0')
+
 		return adjacency
 
 	def normalize_adjacency(self, A):
+		A = A.detach().cpu().numpy()
+  
 		Dl = np.sum(A, 0)
 		num_node = A.shape[0]
 		Dn = np.zeros((num_node, num_node))
@@ -43,6 +55,10 @@ class Graph():
 		A = np.zeros((len(valid_hop), self.num_node, self.num_node))
 		for i, hop in enumerate(valid_hop):
 			A[i][self.hop_dis == hop] = AD[self.hop_dis == hop]
+
+		A = torch.from_numpy(A)
+		A = A.unsqueeze(0)
+		A = A.float().to('cuda:0')
 		return A
 
 

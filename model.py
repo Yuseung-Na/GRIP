@@ -66,8 +66,14 @@ class Model(nn.Module):
 
 	def forward(self, pra_x, pra_A, pra_pred_length, pra_teacher_forcing_ratio=0, pra_teacher_location=None):
 		x = pra_x
+
+		# print("init_pra_A: ", np.shape(pra_A))
+		pra_A = self.graph.get_adjacency(pra_A)
+		# print("get_pra_A: ", np.shape(pra_A))
+		pra_A = self.graph.normalize_adjacency(pra_A)  
+		# print("normalize_pra_A: ", np.shape(pra_A))
 		
-		# forwad
+		# forward
 		for gcn, importance in zip(self.st_gcn_networks, self.edge_importance):
 			if type(gcn) is nn.BatchNorm2d:
 				x = gcn(x)

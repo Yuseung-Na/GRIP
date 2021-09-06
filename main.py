@@ -10,7 +10,7 @@ from datetime import datetime
 import random
 import itertools
 
-CUDA_VISIBLE_DEVICES='1'
+CUDA_VISIBLE_DEVICES='0'
 os.environ["CUDA_VISIBLE_DEVICES"] = CUDA_VISIBLE_DEVICES
 
 def seed_torch(seed=0):
@@ -29,8 +29,8 @@ max_y = 1.
 history_frames = 6 # 3 second * 2 frame/second
 future_frames = 6 # 3 second * 2 frame/second
 
-batch_size_train = 64 
-batch_size_val = 32
+batch_size_train = 1 
+batch_size_val = 1
 batch_size_test = 1
 total_epoch = 50
 base_lr = 0.01
@@ -56,6 +56,8 @@ def display_result(pra_results, pra_pref='Train_epoch'):
 	overall_num_time = np.sum(all_overall_num_list, axis=0)
 	overall_loss_time = (overall_sum_time / overall_num_time) 
 	overall_log = '|{}|[{}] All_All: {}'.format(datetime.now(), pra_pref, ' '.join(['{:.3f}'.format(x) for x in list(overall_loss_time) + [np.sum(overall_loss_time)]]))
+	## output format
+	## |yyyy-mm-dd hh:mm:ss.ssssss|[class] All_All: 0.5s 1.0s 1.5s 2.0s 2.5s 3.0s sum
 	my_print(overall_log)
 	return overall_loss_time
 	
@@ -92,7 +94,10 @@ def preprocess_data(pra_data, pra_rescale_xy):
 	# pra_data: (N, C, T, V)
 	# C = 11: [frame_id, object_id, object_type, position_x, position_y, position_z, object_length, pbject_width, pbject_height, heading] + [mask]	
 	feature_id = [3, 4, 9, 10]
+
+	## 기존 data (N, C, T, V) 에서 C 부분을 position_x, position_y, heading, mask만 추출하여 tensor 복사
 	ori_data = pra_data[:,feature_id].detach()
+	## 복사한 tensor를 재생성
 	data = ori_data.detach().clone()
 
 	new_mask = (data[:, :2, 1:]!=0) * (data[:, :2, :-1]!=0) 
@@ -136,12 +141,22 @@ def train_model(pra_model, pra_data_loader, pra_optimizer, pra_epoch_log):
 		# C = 11: [frame_id, object_id, object_type, position_x, position_y, position_z, object_length, pbject_width, pbject_height, heading] + [mask]
 		data, no_norm_loc_data, object_type = preprocess_data(ori_data, rescale_xy)
 		for now_history_frames in range(1, data.shape[-2]):
+    
+			## position_x, position_y, heading, mask 4개의 C를 가지며, history frame 6개를 사용
 			input_data = data[:,:,:now_history_frames,:] # (N, C, T, V)=(N, 4, 6, 120)
+
+			## future frame 6개에 대한 position_x, position_y를 담고있음
 			output_loc_GT = data[:,:2,now_history_frames:,:] # (N, C, T, V)=(N, 2, 6, 120)
+
+			## future frame 6개에 대한 mask를 담고있음
 			output_mask = data[:,-1:,now_history_frames:,:] # (N, C, T, V)=(N, 1, 6, 120)
 			
+			## tensor를 Cuda(dev)에 최적화된 tensor로 변환하는 과정
+			A = np.squeeze(A)
 			A = A.float().to(dev)
 		
+			## model class에 해당하는 pra_model
+			## main문에서 생성한 model에 해당함
 			predicted = pra_model(pra_x=input_data, pra_A=A, pra_pred_length=output_loc_GT.shape[-2], pra_teacher_forcing_ratio=0, pra_teacher_location=output_loc_GT) # (N, C, T, V)=(N, 2, 6, 120)
 			
 			########################################################
@@ -154,7 +169,9 @@ def train_model(pra_model, pra_data_loader, pra_optimizer, pra_epoch_log):
 			total_loss = torch.sum(overall_sum_time) / torch.max(torch.sum(overall_num), torch.ones(1,).to(dev)) #(1,)
 
 			now_lr = [param_group['lr'] for param_group in pra_optimizer.param_groups][0]
-			my_print('|{}|{:>20}|\tIteration:{:>5}|\tLoss:{:.8f}|lr: {}|'.format(datetime.now(), pra_epoch_log, iteration, total_loss.data.item(),now_lr))
+   
+			if iteration%100 == 0:
+				my_print('|{}|{:>20}|\tIteration:{:>5}|\tLoss:{:.8f}|lr: {}|'.format(datetime.now(), pra_epoch_log, iteration, total_loss.data.item(),now_lr))
 			
 			pra_optimizer.zero_grad()
 			total_loss.backward()
@@ -269,11 +286,23 @@ def test_model(pra_model, pra_data_loader):
 	rescale_xy[:,1] = max_y
 	all_overall_sum_list = []
 	all_overall_num_list = []
+
+	## output txt 파일에 결과 저장 용도
 	with open(test_result_file, 'w') as writer:
 		# train model using training data
+  
 		for iteration, (ori_data, A, mean_xy) in enumerate(pra_data_loader):
-			# data: (N, C, T, V)
-			# C = 11: [frame_id, object_id, object_type, position_x, position_y, position_z, object_length, pbject_width, pbject_height, heading] + [mask]
+			## ori_data: (N, C, T, V) 4차원 배열 형태
+			### N = 415: number of data
+			### C = 11: dimension of features [frame_id, object_id, object_type, position_x, position_y, position_z, object_length, object_width, object_height, heading] + [mask]
+			### T = 6: temporal length of the data (history frames(6), future frames(0))
+			### V = 120: maxinum number of objects
+
+			## A: (1, 3, N, N) 4차원 배열 형태
+
+			## mean_xy: (N, 2) 2차원 배열 형태
+			### N = 415
+			
 			data, no_norm_loc_data, _ = preprocess_data(ori_data, rescale_xy)
 			input_data = data[:,:,:history_frames,:] # (N, C, T, V)=(N, 4, 6, 120)
 			output_mask = data[:,-1,-1,:] # (N, V)=(N, 120)
@@ -335,27 +364,37 @@ def run_trainval(pra_model, pra_traindata_path, pra_testdata_path):
 		my_save_model(pra_model, now_epoch)
 
 		my_print('#######################################Test')
-		display_result(
-			val_model(pra_model, loader_val),
-			pra_pref='{}_Epoch{}'.format('Test', now_epoch)
-		)
+		display_result(val_model(pra_model, loader_val), pra_pref='{}_Epoch{}'.format('Test', now_epoch))
 
 
 def run_test(pra_model, pra_data_path):
+    ## 학습된 .pt 형식의 모델(pra_model)을 불러옴
 	loader_test = data_loader(pra_data_path, pra_batch_size=batch_size_test, pra_shuffle=False, pra_drop_last=False, train_val_test='test')
+
+	## 모델과 test data(pra_data_path)를 넣어 test 결과 출력
 	test_model(pra_model, loader_test)
 
 
 
 if __name__ == '__main__':
+    ## graph 설정 관련 argument
 	graph_args={'max_hop':2, 'num_node':120}
+
+	## model 생성
+	## model.py 클래스를 불러와서 객체 생성
 	model = Model(in_channels=4, graph_args=graph_args, edge_importance_weighting=True)
+ 
+	## GPU 학습을 위해 초기화된 모델에 to(dev)를 통해 Cuda에 최적화된 모델로 변환
+	## dev = 'cuda:0'
 	model.to(dev)
 
-	# train and evaluate model
+	##### training and validation #####
+	## ???? validation data가 없다? 그냥 test data로 validation을 한다..?
 	run_trainval(model, pra_traindata_path='./train_data.pkl', pra_testdata_path='./test_data.pkl')
 	
-	# pretrained_model_path = './trained_models/model_epoch_0016.pt'
+	##### test #####
+	## 학습 된 모델 중 원하는 모델 선택, 이를 기반으로 test 진행
+	# pretrained_model_path = './trained_models/model_epoch_0049.pt'
 	# model = my_load_model(model, pretrained_model_path)
 	# run_test(model, './test_data.pkl')
 	
