@@ -9,6 +9,7 @@ from xin_feeder_baidu import Feeder
 from datetime import datetime
 import random
 import itertools
+from torch.utils.tensorboard import SummaryWriter
 
 CUDA_VISIBLE_DEVICES='0'
 os.environ["CUDA_VISIBLE_DEVICES"] = CUDA_VISIBLE_DEVICES
@@ -41,6 +42,8 @@ log_file = os.path.join(work_dir,'log_test.txt')
 test_result_file = 'prediction_result.txt'
 
 criterion = torch.nn.SmoothL1Loss()
+
+summary = SummaryWriter(work_dir)
 
 if not os.path.exists(work_dir):
 	os.makedirs(work_dir)
@@ -170,8 +173,13 @@ def train_model(pra_model, pra_data_loader, pra_optimizer, pra_epoch_log):
 
 			now_lr = [param_group['lr'] for param_group in pra_optimizer.param_groups][0]
    
-			if iteration%100 == 0:
-				my_print('|{}|{:>20}|\tIteration:{:>5}|\tLoss:{:.8f}|lr: {}|'.format(datetime.now(), pra_epoch_log, iteration, total_loss.data.item(),now_lr))
+			if iteration%10 == 0:
+				summary.add_scalar('loss', total_loss.data.item(), iteration)
+				summary.add_scalar('learning_rate', now_lr, iteration)
+    
+				if iteration%100 == 0:
+					my_print('|{}|{:>20}|\tIteration:{:>5}|\tLoss:{:.8f}|lr: {}|'.format(datetime.now(), pra_epoch_log, iteration, total_loss.data.item(),now_lr))
+
 			
 			pra_optimizer.zero_grad()
 			total_loss.backward()
@@ -211,6 +219,7 @@ def val_model(pra_model, pra_data_loader):
 			# for category
 			cat_mask = ori_data[:,2:3, now_history_frames:, :] # (N, C, T, V)=(N, 1, 6, 120)
 			
+			A = np.squeeze(A)
 			A = A.float().to(dev)
 			predicted = pra_model(pra_x=input_data, pra_A=A, pra_pred_length=output_loc_GT.shape[-2], pra_teacher_forcing_ratio=0, pra_teacher_location=output_loc_GT) # (N, C, T, V)=(N, 2, 6, 120)
 			########################################################

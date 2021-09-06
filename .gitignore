@@ -1,6 +1,7 @@
 /dataset/
 /__pycache__/
 /layers/__pycache__/
+/trained_models/
 
 *.pkl
 *.pyc
